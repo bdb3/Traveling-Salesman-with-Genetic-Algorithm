@@ -5,6 +5,7 @@ Potential paths between these nodes are saved as lists, and each list of paths i
 passes these paths are mutated with differing functions, shown below, and the algorithm trys to achieve the shortest path over multiple iterations. 
 <br />
 In the screenshot is also an on/off switch for Fitness Uniform Selection Scheme (FUSS). This is a way to maintain more consistent diversity as described in the following paper...
+<br />
 http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.413.7546&rep=rep1&type=pdf
 <br />
 ![alt text](https://i.imgur.com/mWguhNl.jpg)
