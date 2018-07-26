@@ -1,5 +1,5 @@
 # Traveling-Salesman-with-Genetic-Algorithm
-
+This project is a NetLogo model that finds shortest path between nodes using a GA to determine the best path.
 Below are screenshots of the model in action. The main model is a set of nodes, the amount of which is determined by the initial_node slider.
 Potential paths between these nodes are saved as lists, and each list of paths is considered an individual in the population. As each generation
 passes these paths are mutated with differing functions, shown below, and the algorithm trys to achieve the shortest path over multiple iterations. 
