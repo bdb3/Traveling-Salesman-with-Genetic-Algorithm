@@ -14,6 +14,7 @@ http://citeseerx.ist.psu.edu/viewdoc/download?doi=10.1.1.413.7546&rep=rep1&type=
 This screenshot shows the Fitness and Diversity graphs, the mutation sliders,  and the sliders for the initial values used when setting up the population. Each mutation slider represents a mutation that the
 direction sets will go through. The higher the slider, the more likely that that particular mutation will be chosen on each generation.
 <br />
+<br />
 ![alt text](https://i.imgur.com/KrRo2gc.jpg)
 
 
