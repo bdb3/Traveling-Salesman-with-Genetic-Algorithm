@@ -1,0 +1,486 @@
+;;; Put your GA code in this file ;;;
+
+breed [individuals individual]
+
+individuals-own [
+  chromosome ;list of nodes in order
+  fitness    ;length of the path represented by the chromosome
+]
+
+to update-global-bests [ reset ] 
+  if reset
+  [
+    set absolute-worst -1
+    set absolute-best -1
+  ]
+  ; only set best-length if it's actually "better", or if this is a reset
+  if-else (reset or best-length > (min [fitness] of individuals) )
+    [ 
+      set best-length min [fitness] of individuals 
+      set best-path [chromosome] of min-one-of individuals [fitness]
+      set best-path-age 0 
+      if ( best-length <= initial-best-length and population-at-match = 0 ) [
+        set population-at-match ticks
+      ]
+    ]
+    [ set best-path-age best-path-age + 1 ]
+end
+
+; this is no different than to-list procedure in utils.nls, I just gave it 
+; a name that makes sense in the TLS context 
+to-report random-permutation-of-nodes
+  report [self] of nodes
+end
+
+; diversity is calculated as evenness index
+; for reference: https://en.wikipedia.org/wiki/Species_evenness
+
+; we assume that there are 10 'species' here, each corresponds
+; to a 1/10 block of the difference between best and worst fitness
+
+to-report diversity
+  let best_length min [fitness] of individuals
+  let wrst_length max [fitness] of individuals
+  
+  if-else absolute-worst = -1
+  [ set absolute-worst wrst_length ]
+  [
+    if-else absolute-worst > wrst_length
+    [ set wrst_length absolute-worst ]
+    [ set absolute-worst wrst_length ]
+  ]
+  
+  if-else absolute-best = -1
+  [ set absolute-best best_length ]
+  [
+    if-else absolute-best < best_length
+    [ set best_length absolute-best ]
+    [ set absolute-best best_length ]
+  ]
+  
+  let coeff (wrst_length - best_length) / 10
+  ; count all individuals that fit within each 1/10 block
+  ; of the difference between best and worst
+  let species_counts map
+  [
+    i ->
+    (
+      count individuals with [ fitness > ((i - 1) * coeff + best_length) and fitness < (i * coeff + best_length) ]
+    )
+  ] [1 2 3 4 5 6 7 8 9 10]
+  ; remove 0 entries
+  set species_counts filter [c -> c > 0] species_counts
+  let sum_species sum species_counts
+  let proportions map [ c -> (0 - (c / sum_species) * ln (c / sum_species)) ] species_counts
+  let shannon_index sum proportions
+  let evenness_index (shannon_index / ln sum_species)
+  ; note that evenness-index is constrained to between 0 - 1
+  report evenness_index
+end
+
+; takes care of when nodes are added
+to-report handle-adding-nodes [reset]
+  if length nodes-to-add > 0
+  [
+    foreach nodes-to-add [
+      a-node -> insert-into-individuals-node a-node
+    ]
+    set nodes-to-add []
+    report true
+  ]
+  report false or reset
+end
+
+to-report handle-deleting-nodes [reset]
+  ; takes care of when a node is deleted
+  if length nodes-to-del > 0
+  [
+    foreach nodes-to-del [
+      a-node -> remove-from-individuals-node a-node
+      ask a-node [die]
+    ]
+    set nodes-to-del []
+    report true
+  ]
+  report false or reset
+end
+
+;;;;;;;;;;;;;;;;;;;;;; genetic algorithm ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to one-cycle
+  set nodes-to-add []
+  set nodes-to-del []
+  generate-initial-population
+  set initial-best-length best-length
+  create-new-generation
+  update-global-bests true
+  display-best-path
+end
+
+to evolve-path
+  ; if nodes have been added (either via setup or via GUI interaction)
+  ; then generate an initial population and start anew, and reset
+  ; best-path and best-lenght
+  ; otherwise continue to iterate through new generations
+  let reset-global-bests false
+  
+  if-else (ticks = 0)
+  [
+    ; initially, nodes are added and a new population is generated
+    ; so we can ignore the added nodes
+    set nodes-to-add []
+    generate-initial-population
+    set reset-global-bests true
+    set initial-best-length best-length
+  ]
+  [
+    set reset-global-bests handle-adding-nodes reset-global-bests
+    set reset-global-bests handle-deleting-nodes reset-global-bests
+    create-new-generation
+  ]
+  
+  update-global-bests ( reset-global-bests )
+end
+
+to generate-initial-population
+  create-individuals pop-size
+  [
+    init-individual random-permutation-of-nodes
+  ]
+    
+end
+
+to create-new-generation
+  ; save old-generation as an agent-set, so we can kill it at the end.
+  let old-generation (turtle-set individuals)
+  
+  ; ------------- preserve the best chromosomes ------------------------------
+  ; these individuals contain the chromosomes we need to keep 
+  ; for next generation
+  
+  ; Bill's note: added 'round' to take care of cases where percentage above 0 still
+  ; won't keep best path around. I think it should (?)
+  let num-elite round ((percent-elite / 100) * (count old-generation))
+  let elite min-n-of num-elite individuals [ fitness ]
+  
+  ; but since we'll be killing all of the old generation,
+  ; we transfer their chromosomes to new individuals
+  ask elite [
+    hatch 1 []
+  ]
+  
+  ; ------------- create new chromosomes -------------------------------------
+  let num-to-create (pop-size - num-elite)
+  while [ num-to-create > 0 ] [ 
+    if-else (random-float 1 < crossover-probability and num-to-create >= 2) 
+    [
+      let parent1 select-parent old-generation
+      let parent2 select-parent old-generation
+      reproduce-by-crossover parent1 parent2
+      set num-to-create (num-to-create - 2) ; two children from crossover
+    ]
+    [
+      let parent min-one-of (n-of tournament-size old-generation) [fitness]
+      reproduce-by-mutation parent
+      set num-to-create (num-to-create - 1) ; one child from mutation
+    ]
+    
+  ]
+  
+  ; ------------------------- mutate worst chromosomes ------------------------
+  ; we assume anything that isn't elite is considered worse, and the percentage
+  ; of 'worst' is basically % of (1 - percent-elite)
+  if percent-worst > 0
+  [
+    let num-worst round ((percent-worst / 100) * (1 - (percent-elite / 100)) * (count individuals))
+    let worst max-n-of num-worst ( individuals with [not member? self elite] ) [fitness]
+    ask worst
+    [
+      set chromosome replace-part-with-greedy chromosome
+    ]
+  ]
+  
+  ; ---------------- out with the old -----------------------------------------
+  ask old-generation [ die ]
+end
+;;;;;;;;;;;;;;;;;;;;;;; selection methods ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+to-report select-parent [old-gen]
+  if-else FUSS[
+    let min-fitness [fitness] of min-one-of old-gen [fitness]
+    let max-fitness [fitness] of max-one-of old-gen [fitness]
+    let selection-fitness (min-fitness + random (max-fitness - min-fitness))
+    report fuss-select old-gen selection-fitness min-fitness max-fitness
+  ] 
+  [report min-one-of (n-of tournament-size old-gen) [fitness]]
+end
+
+to-report fuss-select [old-gen selection-fitness min-fitness max-fitness]
+  
+  let selection one-of old-gen with [fitness = selection-fitness]
+  if-else selection = NOBODY[
+    if-else selection-fitness <= max-fitness[
+      set selection-fitness (selection-fitness + 1)
+      report fuss-select old-gen selection-fitness min-fitness max-fitness
+    ]
+    [set selection-fitness min-fitness]
+    
+  ]
+  [report selection]
+end
+
+
+;;;;;;;;;;;;;;;;;;;;;;; reproduction methods ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+
+; this is like a constructor for individuals
+to init-individual [ chromo ]
+  set hidden? true
+  if-else ( random-float 1) < mutation-probability 
+  [ set chromosome mutate chromo ]
+  [ set chromosome chromo ]
+  set fitness length-of-path chromosome
+end
+
+to reproduce-by-crossover [parent1 parent2]
+  
+  let chromo1 [ chromosome ] of parent1
+  let chromo2 [ chromosome ] of parent2
+  
+  ; make child 1
+  create-individuals 1 [
+    init-individual crossover chromo1 chromo2
+  ]
+  
+  ; make child 2
+  create-individuals 1 [
+    init-individual crossover chromo2 chromo1
+  ]
+  
+end
+
+to-report crossover [chromoA chromoB]
+  let chromoC []
+  let n length chromoA
+  
+  ; start the new path with random node from chromoA
+  set chromoC fput (item (random n) chromoA) chromoC
+  
+  while [length chromoC < n] [
+    
+    let next-node nobody;
+    
+    ; consider the chromoA and chromoB neighbors of the last node added
+    ; to chromoC as candidates for next node to add to chromoC
+    let posA position (last chromoC) chromoA
+    let posB position (last chromoC) chromoB
+    let candidates []
+    set candidates lput (item ((posA - 1 + n) mod n) chromoA) candidates
+    set candidates lput (item ((posA + 1 + n) mod n) chromoA) candidates
+    set candidates lput (item ((posB - 1 + n) mod n) chromoB) candidates
+    set candidates lput (item ((posB + 1 + n) mod n) chromoB) candidates
+    
+    ; filter out any that have already been added
+    set candidates (filter [ c -> not member? c chromoC ] candidates)
+   
+    if-else (length candidates > 0)
+    [ set next-node one-of candidates ]
+    [ ; it may happen that there remains a neighbor who never got picked
+      ; while all the current neighbors have already been added, in 
+      ; which case the next-node is that neigbor
+      set next-node one-of (filter [ c -> not member? c chromoC ] chromoA )
+    ]
+    
+    set chromoC lput next-node chromoC
+  ]
+  report chromoC
+end
+
+to reproduce-by-mutation [parent]
+  let chromo mutate [ chromosome ] of parent
+  create-individuals 1 [
+   init-individual chromo
+  ]
+end
+
+to-report mutate [ chromo ]
+  let mutant-chromo chromo
+  let decider random 100
+  if (decider < RANDOM_SWAP) [
+    set mutant-chromo random-swap mutant-chromo ;
+  ]
+  set decider random 100
+  if (decider < UNTWIST_PAIR)  [
+    set mutant-chromo an-untwist mutant-chromo ; uses procedure defined
+                                        ; in intersecting-edges.nls
+  ]
+  set decider random 100
+  if (decider < REVERSE_RANDOM_SUBSEQUENCE) [
+    set mutant-chromo reverse-random-subsequence mutant-chromo 
+  ]
+  set decider random 100
+  if (decider < REPLACE_PART_WITH_GREEDY) [
+    set mutant-chromo replace-part-with-greedy mutant-chromo
+  ]
+  set decider random 100
+  if (decider < OPTIMIZE_RANDOM_NODE) [
+    ;set mutant-chromo optimize-random-node chromo
+    set mutant-chromo reinsert-random-node mutant-chromo
+  ]
+  report mutant-chromo
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; mutations ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; take two random node in the path and swap their positions
+to-report random-swap [ chromo ]
+  let i random length chromo
+  let j random length chromo
+  
+  let node_at_i item i chromo
+  let node_at_j item j chromo
+  
+  set chromo replace-item i chromo node_at_j
+  set chromo replace-item j chromo node_at_i
+  
+  report chromo
+end
+
+to-report reverse-random-subsequence [ chromo ]
+  let n length chromo
+  
+  ; pick random positions for the start (inclusive)
+  ; and end (exclusive) of the subsequence
+  let i random n
+  let j (i + random (n - i))
+  
+  ; section the chromo
+  let segment_0_i sublist chromo 0 i
+  let segment_i_j sublist chromo i j
+  let segment_j_n sublist chromo j n
+  
+  ; reverse the middle subsequence
+  set segment_i_j reverse segment_i_j
+  
+  ; reassemble the chromo
+  set chromo (sentence segment_0_i segment_i_j segment_j_n)
+  
+  report chromo
+end
+
+to-report replace-part-with-greedy [ chromo ]
+  let n length chromo
+  
+  ; break chromo into two non-empty segments
+  let i 1 + (random (n - 1))
+  let segment_0_i sublist chromo 0 i
+  let segment_i_n sublist chromo i n
+  
+  ; replace the second segment with greedy path
+  set chromo add-greedily segment_0_i segment_i_n
+  
+  report chromo
+end
+
+to-report add-greedily [ path-so-far remaining-nodes ]
+  if-else (empty? remaining-nodes)
+  [ ; base case for recursion
+    report path-so-far
+  ]
+  [
+    let last-node last path-so-far
+    
+    ; pick the closest node from the remaining ones...
+    let next-node first remaining-nodes
+    let shortest-distance [ link-length ] of edge-between last-node next-node
+    let i 1
+    while [ i < length remaining-nodes ]
+    [
+      let ith_node (item i remaining-nodes)
+      let ith_node_distance [ link-length ] of edge-between last-node ith_node
+      if ( ith_node_distance < shortest-distance) [
+        set next-node ith_node
+        set shortest-distance ith_node_distance
+      ]
+      set i (i + 1)
+    ]
+    
+    ; remove it from remaining nodes
+    set remaining-nodes remove next-node remaining-nodes
+    
+    ; add it to the path
+    set path-so-far lput next-node path-so-far
+    
+    ; recursive call
+    report add-greedily path-so-far remaining-nodes
+  ]  
+end
+
+to-report optimize-random-node [ chromo ]
+  let a-node one-of chromo
+  let remaining-path remove a-node chromo
+  
+  let better-path fput a-node remaining-path
+  let n length remaining-path
+  let i 1
+  while [ i < length remaining-path ] [
+    let left-of sublist remaining-path 0 i
+    let right-of sublist remaining-path i n
+    let a-path (sentence left-of a-node right-of)
+    if (length a-path < length better-path) [
+      set better-path a-path
+    ]
+    set i (i + 1)
+  ]
+  report better-path
+end
+
+; attempt at trying to optimize the above random node insertion procedure
+to-report reinsert-random-node [ chromo ]
+  ; if the remaining path is a triangle
+  ; then there is no point in trying to
+  ; re-position the node at all
+  if-else length chromo < 4
+  [ report chromo ]
+  ; otherwise try to reinsert a random node
+  ; where its impact on the sum of distances
+  ; is minimal
+  
+  ; note: the following was copied from 'insert-node-into-path'
+  [
+    let a-node one-of chromo
+    let remaining-path remove a-node chromo
+    report insert-node a-node remaining-path
+  ]
+end
+
+; this will try to find the optimal place to insert a node into a path
+to-report insert-node [ a-node a-path ]
+  let distances map
+  [
+    ed -> [distance-to-ends ed a-node - [link-length] of ed] of ed
+  ] (path-edges a-path)
+  let pos position (min distances) distances
+  report insert-item (pos + 1) a-path a-node
+end
+
+; this will insert a node into all individuals
+to insert-into-individuals-node [ a-node ]
+  ask individuals
+  [
+    set chromosome insert-node a-node chromosome
+    set fitness length-of-path chromosome
+  ]
+end
+
+; this will remove a node from all individuals
+; TODO: check why this doesn't work (maybe something to do with life cycle?)
+to remove-from-individuals-node [ a-node ]
+  ask individuals
+  [
+    ; remove the node from the chromosome
+    let new-path remove a-node chromosome
+    ; and recalculate fitness plus reassign chromosome
+    set fitness length-of-path new-path
+    set chromosome new-path
+  ]
+end

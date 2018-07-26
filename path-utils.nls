@@ -1,0 +1,56 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Path utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; The sum of the distances from a-node to the two ends of edge  ed.
+;; distance-to-ends :: (Node, Edge) -> Float
+to-report distance-to-ends [ed a-node]
+  ;report sum map-agentset [n -> [distance n] of a-node] ([both-ends] of an-edge)
+  let end-nodes to-list [both-ends] of ed
+  let dists map [n -> [distance a-node] of n] end-nodes
+  report sum dists
+end
+
+; return the edge between node1 and node2
+;; edge-between :: (Node, Node) -> Edge
+to-report edge-between [node1 node2]
+  report edge ([who] of node1) ([who] of node2)
+end
+
+;; edge-between-pair :: [Node Node] -> Edge
+; return the edge between [node1 node2]
+to-report edge-between-pair [pair]
+  report edge-between (item 0 pair) (item 1 pair)
+end
+
+; insert new node a-node into a-path where it will add the least amount to the path length.
+;; insert-node-into-path :: (Node, Path) -> Path
+to-report insert-node-into-path [a-node a-path]
+  ;report path-with-route insert-node-into-route a-node [path-route] of a-path
+  ifelse length best-path < 3 [report fput a-node best-path] [
+    let distances map
+    [
+      ed -> [distance-to-ends ed a-node - [link-length] of ed] of ed
+    ] (path-edges best-path)
+    let pos position (min distances) distances
+    report insert-item (pos + 1) a-path a-node
+  ]
+end
+
+; find the length of a path
+;; length-of-path :: Path -> Int
+to-report length-of-path [a-path]
+  ;report length-of-route ([path-route] of a-path)
+  report round sum map [x -> [link-length] of x] (path-edges a-path)
+end
+
+; a-path is a list of modes. Returns the edges connecting the nodes in sequence.
+;; path-edges :: Path -> [Edge]
+to-report path-edges [a-path]
+  ;report route-edges [path-route] of a-path
+  report
+  ifelse-value (length a-path < 2)  [
+    []
+  ] [
+    reduce [ [so-far node-pair] -> lput (edge-between-pair node-pair) so-far]
+    fput [] zip a-path (lput first a-path but-first a-path)
+  ]
+end

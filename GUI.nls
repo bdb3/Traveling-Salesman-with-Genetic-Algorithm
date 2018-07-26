@@ -1,0 +1,97 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; GUI (node operations) ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Turn the GUI on so that the mouse is active in the view area. This is a forever button.
+to GUI-on
+  ask selected-node [set color orange]
+  update-selected-node closest-node
+  if mouse-down? [
+    if [distancexy mouse-xcor mouse-ycor] of selected-node > 2 [create-node-at-xy next-node-number mouse-xcor mouse-ycor]
+    drag-node
+    ]
+  ;; was the show-all-edges switch changed?
+  if show-all-edges != showing-all-edges [
+    set showing-all-edges show-all-edges
+    display-best-path
+  ]
+  display
+  ;; turn off the orange color when the GUI-on button is released.
+  ;; set it back to orange at the start of GUI-on
+  ask selected-node [set color node-color]
+end
+
+; Find the node closest to the mouse
+; closest-node:: <mouse> -> Node
+to-report closest-node
+  report min-one-of nodes with [not hidden?] [distancexy mouse-xcor mouse-ycor]
+end
+
+; Create a node at (x, y); make it the selected node; insert it into best-path
+;; create-node :: (X-Cor,  Y-Cor) -> {Node created, assigned to selected-node, and inserted into best-path}
+to create-node-at-xy [node-number x y]
+  let a-node nobody
+  create-nodes 1 [
+    set a-node self
+    set color node-color
+    set size 1 ; 2.5
+    setxy x y
+    ;set label (word node-number "<" who ">" "   ")  ;; special characters don't work in labels Ignore designated node-number
+    set label (word "[" node-number "]" "  ")
+    set next-node-number 1 + max (list next-node-number node-number)
+    set label-color node-label-color
+    create-edges-with other nodes [
+      ;set label round link-length
+      set label-color black
+      set color black
+      set hidden? not showing-all-edges
+    ]
+    ;; ask the-population [set nodes-to-add lput myself nodes-to-add]
+  ]
+  set nodes-to-add lput a-node nodes-to-add
+  update-selected-node a-node
+  set-new-best-path insert-node-into-path a-node best-path
+end
+
+; Delete the selected node. The "D" key deletes. BUT it is often necessary to click outside
+; the command area and outside the view to make keyboard input accessible to the code.
+;; delete-node :: <selected-node> -> {selected-node deleted and removed from best-path; closest-node becomes new selected-node}
+to delete-node
+  if count nodes >= 3 [
+    set best-path remove selected-node best-path
+    display-best-path
+    set nodes-to-del lput selected-node nodes-to-del
+    ask selected-node [set hidden? true]
+    set selected-node closest-node
+    
+    ;; clear path stacks because they could crash the model
+    set forward-stack []
+    set backward-stack []
+  ]
+end
+
+; Drag the selected node
+;; drag-node :: <mouse> -> {selected-node moves to mouse; best-path.path-length updated}
+to drag-node
+  while [mouse-down?] [
+    ;; If we don't force the view to update, the user won't
+    ;; be able to see the nodes moving around.
+    ask selected-node [
+      setxy mouse-xcor mouse-ycor
+      ;ask my-edges [set label round link-length]
+    ]
+    set best-length length-of-path best-path
+    display-best-path
+  ]
+end
+
+; update the selected-node to be new-selected-node
+;; update-selected-node :: <selected-node> -> Node -> {selected-node <- Node; selected-node and Node colors set}
+to update-selected-node [new-selected-node]
+  if selected-node != new-selected-node [
+    if selected-node != nobody [ask selected-node [set color node-color]]
+    set selected-node new-selected-node
+    ask selected-node [set color orange]
+  ]
+end
+
+
+

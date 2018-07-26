@@ -1,0 +1,73 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Intersecting links and twists ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; Do these two edges intersect?
+;; intersect? :: (edge1, edge2) -> Bool
+to-report intersect? [edge1 edge2]
+  let p1 [end1] of edge1
+  let p2 [end2] of edge1
+  let q1 [end1] of edge2
+  let q2 [end2] of edge2
+  report
+  length remove-duplicates (list p1 p2 q1 q2) = 4 and
+  orientation p1 p2 q1 != orientation p1 p2 q2 and
+  orientation q1 q2 p1 != orientation q1 q2 p2
+end
+
+;; return a pair of intersecting edges if any
+to-report intersecting-edges [a-path]
+  let es path-edges a-path
+  let n length es
+  foreach (range 0 (n - 1)) [
+    i1 -> foreach (range (i1 + 1) n) [
+      i2 -> let e1 item i1 es
+            let e2 item i2 es
+            if intersect? e1 e2 [ report list e1 e2 ]
+    ]
+  ]
+  report []
+end
+
+; used for determining intersection
+to-report orientation [p q r]
+  let val   ([ycor] of q - [ycor] of p) * ([xcor] of r - [xcor] of q) -
+            ([xcor] of q - [xcor] of p) * ([ycor] of r - [ycor] of q)
+  report sign val
+end
+
+; the segment to reverse in the list of nodes  es  given the intersecting edges
+;; segment-to-reverse :: ([Edge], [Edge]) -> (Int, Int)
+to-report segment-to-reverse [es intersecting-es]
+  let p1 1 + position item 0 intersecting-es es
+  let p2 1 + position item 1 intersecting-es es
+  report (list p1 p2)
+end
+
+; untwist one intersection, if any, in the best-path
+to-report an-untwist [p-nodes]
+  let intersecting-es (intersecting-edges p-nodes)
+  ifelse (not empty? intersecting-es) [
+    let es path-edges p-nodes
+    let indices segment-to-reverse es intersecting-es
+    report
+    (sentence sublist p-nodes 0 item 0 indices
+              reverse sublist p-nodes item 0 indices item 1 indices
+              sublist p-nodes item 1 indices length p-nodes)
+  ] [report p-nodes ]
+end
+
+; Called from a UI button
+;; untwist :: <best-path> -> <best-path>
+to untwist
+  let untwisted an-untwist best-path
+  if (untwisted != best-path) [
+    set-new-best-path untwisted
+    display-best-path  
+  ]
+  ;let best-route [path-route] of best-path
+  ;let untwisted-route an-untwist best-route
+  ;if untwisted-route != best-route [
+  ;  set-new-best-path path-with-route untwisted-route
+  ;  display-best-path  
+  ;] 
+end
+

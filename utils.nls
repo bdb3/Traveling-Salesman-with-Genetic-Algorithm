@@ -1,0 +1,39 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Utils ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; map over an agentset and return a list of the results.
+;; Too bad   "[f] of as"   doesn't work 
+to-report map-agentset [f as]
+  report map f to-list as
+end
+
+;; return the agentset  as  with agent  a  removed
+to-report other-agents [a as]
+  let others no-turtles
+  ask a [set others other as]
+  report others
+end
+
+; return -1, 0, or 1 depending on whether n is
+; less than 0, 0, or greater than 0
+to-report sign [n]
+  report ifelse-value (n = 0) [0] [n / abs n]
+end
+
+;; return a list of agents in agentset  as.
+to-report to-list [as]
+  report [self] of as
+end
+
+; Undoes what  zip  does.
+to-report unzip [zipped-list]
+  report 
+  reduce [ [so-far next-pair] -> 
+                   (list lput item 0 next-pair item 0 so-far
+                         lput item 1 next-pair item 1 so-far)]
+         fput [ [] [] ] zipped-list
+end
+
+;; combine two lists into a single paired list
+to-report zip [l1 l2]
+  report (map [[i1 i2] -> (list i1 i2)] l1 l2)
+end

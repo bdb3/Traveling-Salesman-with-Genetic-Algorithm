@@ -1,0 +1,45 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;; Greedy path ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; A recursive function that takes a partial path and addes nodes to it until all nodes are included.
+;; The partial-path-nodes parameter must not be the empty list.
+to-report greedy-nodes [partial-path-nodes remaining-nodes wait?]
+  let end-node last partial-path-nodes
+  if not any? remaining-nodes [ 
+   if length partial-path-nodes > 1 [
+      ask edge-between end-node (first partial-path-nodes) [
+        set color path-color 
+        set thickness 0.2
+      ]
+    ]
+    report partial-path-nodes
+  ]
+  let poss-edges ([my-edges] of end-node) with [not used]
+  let next-edge min-one-of poss-edges [link-length]
+  if wait? [ask next-edge [set color path-color
+                           set thickness 0.2
+                           set hidden? false
+                           wait 0.3
+                           display]]
+  ask [my-edges] of end-node [set used true]
+  let next-node nobody
+  ask end-node [set next-node [other-end] of next-edge]
+  let other-remaining-nodes []
+  ask next-node [set other-remaining-nodes other remaining-nodes]
+  report greedy-nodes (lput next-node partial-path-nodes) other-remaining-nodes wait?
+end
+
+; run the greedy-nodes function to generate a full path. The  wait? argument indicates whether to pause between new edges.
+to-report greedy-path [wait?]
+  ask edges [set used false]
+  let first-node one-of nodes
+  report greedy-nodes (list first-node) (other-agents first-node nodes) wait?
+end
+
+; generate a greedy path with pauses between the edges
+;; greedy-path-visible :: Bool -> {best-path <- new greedy path}
+to greedy-path-visible
+  ask edges [set hidden? true]
+  display
+  set-new-best-path greedy-path true
+  display-best-path
+end
